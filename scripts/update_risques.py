@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Calcule une carte de vigilance météo (11 aléas, échelle propre à chaque
 aléa, non officielle) à partir des fichiers départementaux déjà publiés par
 le hub `harmonie`.
@@ -55,7 +55,7 @@ def _effective_date(moment: datetime) -> date:
 
 
 DEFAULT_HARMONIE_BASE_URL = (
-    "https://raw.githubusercontent.com/alertesmeteo-hub/harmonie/data"
+    "https://raw.githubusercontent.com/monsieurmeteo/harmonie/data"
 )
 DEFAULT_AROME_BASE_URL = (
     "https://raw.githubusercontent.com/alertesmeteo-hub/arome-meteofrance/data"
