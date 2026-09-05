@@ -1,0 +1,81 @@
+name: Vigilance AROME (11 aléas, mêmes seuils)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Toutes les heures : le loader vérifie le run publié par la plateforme
+    # (fichiers communaux MCV2 de monsieurmeteo/arome-weather-map) et ne
+    # republie que si les données ont changé (run_time + version pipeline).
+    - cron: "35 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arome-vigilance
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installer Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Calculer les 11 aléas depuis les données communales AROME
+        id: build
+        run: |
+          python scripts/update_risques_arome.py --output-dir build/arome-national
+          if test -f build/arome-national/risques.json; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vérifier la publication
+        if: steps.build.outputs.publish == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("build/arome-national/risques.json").read_text(encoding="utf-8"))
+          assert payload["status"] == "ok"
+          assert len(payload["departments"]) >= 80
+          assert len(payload["hazards"]) == 11
+          assert "AROME" in payload["source"]["model"]
+          sample = next(iter(payload["departments"].values()))
+          assert len(sample["daily"]) >= 1
+          print(
+              f"Validation OK : {len(payload['departments'])} départements, "
+              f"run {payload.get('run_time', '?')}, modèle {payload['source']['model']}"
+          )
+          PY
+
+      - name: Publier sur la branche data
+        if: steps.build.outputs.publish == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          publish_dir="$(mktemp -d)"
+          cp -R build/arome-national/. "$publish_dir/"
+          git init -b data "$publish_dir"
+          git -C "$publish_dir" config user.name "github-actions[bot]"
+          git -C "$publish_dir" config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$publish_dir" add .
+          git -C "$publish_dir" commit -m "Mise à jour Vigilance AROME"
+          git -C "$publish_dir" push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:data
